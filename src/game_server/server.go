@@ -20,18 +20,36 @@ func (s *GameServer) init(portString string) {
 }
 
 func (s *GameServer) handleRequests() {
+	c := make(chan []byte)
+
 	for {
-		s.handleClient()
+		go s.dispatch(c)
+		s.handleClient(c)
 	}
 }
 
-func (s *GameServer) handleClient() {
+func (s *GameServer) dispatch(c chan []byte) {
+	data, ok := <-c
+
+	if !ok {
+		return
+	}
+
+	recv_str := string(data[:])
+	fmt.Println("Received: ", recv_str)
+}
+
+func (s *GameServer) handleClient(c chan []byte) {
 	var buf [1024]byte
-	var sendBuf bytes.Buffer
-	_, addr, err := s.conn.ReadFromUDP(buf[0:])
+
+	sz, addr, err := s.conn.ReadFromUDP(buf[0:])
 	if err != nil {
 		return
 	}
+	c <- buf[:sz]
+
+	var sendBuf bytes.Buffer
+
 	curTime := time.Now().String()
 	sendBuf.WriteString(curTime)
 	sendBuf.WriteString(" hello from server")
