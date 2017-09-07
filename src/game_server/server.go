@@ -9,7 +9,13 @@ import (
 )
 
 type GameServer struct {
-	conn *net.UDPConn
+	conn  *net.UDPConn
+	rooms []GameRoom
+}
+
+type Message struct {
+	msg  []byte
+	addr *net.UDPAddr
 }
 
 func (s *GameServer) init(portString string) {
@@ -20,40 +26,81 @@ func (s *GameServer) init(portString string) {
 }
 
 func (s *GameServer) handleRequests() {
-	c := make(chan []byte)
+	c := make(chan Message)
 
+	go s.dispatch(c)
+	s.handleClient(c)
+}
+
+func (s *GameServer) handleClient(c chan Message) {
 	for {
-		go s.dispatch(c)
-		s.handleClient(c)
+		var buf [1024]byte
+
+		sz, addr, err := s.conn.ReadFromUDP(buf[0:])
+		if err != nil {
+			return
+		}
+		msg := Message{buf[:sz], addr}
+		c <- msg
 	}
 }
 
-func (s *GameServer) dispatch(c chan []byte) {
-	data, ok := <-c
+func (s *GameServer) dispatch(c chan Message) {
+	for {
+		data, ok := <-c
 
-	if !ok {
-		return
+		if !ok {
+			return
+		}
+
+		recv_str := string(data.msg[:])
+		fmt.Println("Received: ", recv_str)
+		s.dispatchMessage(data)
 	}
-
-	recv_str := string(data[:])
-	fmt.Println("Received: ", recv_str)
 }
 
-func (s *GameServer) handleClient(c chan []byte) {
-	var buf [1024]byte
-
-	sz, addr, err := s.conn.ReadFromUDP(buf[0:])
-	if err != nil {
-		return
+func (s *GameServer) dispatchMessage(m Message) {
+	switch m.msg[0] {
+	case 'n':
+		s.notifyPlayers(m)
+	case 'c':
+		s.createRoomAndPlayer(m)
+	default:
+		s.unknownMessage(m)
 	}
-	c <- buf[:sz]
+}
+
+func (s *GameServer) notifyPlayers(m Message) {
+	fmt.Println("I'm supposed to be notifying the players")
 
 	var sendBuf bytes.Buffer
 
 	curTime := time.Now().String()
 	sendBuf.WriteString(curTime)
-	sendBuf.WriteString(" hello from server")
-	s.conn.WriteToUDP(sendBuf.Bytes(), addr)
+	sendBuf.WriteString(" You just tried to notify players!")
+	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
+}
+
+func (s *GameServer) createRoomAndPlayer(m Message) {
+	fmt.Println("I'm supposed to create a room")
+
+	var sendBuf bytes.Buffer
+
+	curTime := time.Now().String()
+	sendBuf.WriteString(curTime)
+	sendBuf.WriteString(" You just tried to connect!")
+	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
+}
+
+func (s *GameServer) unknownMessage(m Message) {
+	fmt.Println("Received Unknown Message: ", m.msg[0])
+
+	var sendBuf bytes.Buffer
+
+	curTime := time.Now().String()
+	sendBuf.WriteString(curTime)
+	sendBuf.WriteString(" wtf did you just do?")
+	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
 }
 
 func (s *GameServer) sendMessage(b []byte, other GamePlayer) {
@@ -63,9 +110,7 @@ func (s *GameServer) sendMessage(b []byte, other GamePlayer) {
 func (s *GameServer) broadcast(sender uint, b []byte, r GameRoom) {
 	players := r.getPlayers()
 	for i := range players {
-		if players[i].number != sender {
-			s.sendMessage(b, players[i])
-		}
+		s.sendMessage(b, players[i])
 	}
 }
 

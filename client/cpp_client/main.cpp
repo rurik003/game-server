@@ -5,13 +5,13 @@
 
 int main(int argc, char **argv)
 {
-	if (argc != 2) {
-		std::cout << "USAGE: ./client <ip_address>" << std::endl;
+	if (argc != 3) {
+		std::cout << "USAGE: ./client <ip_address> <message>" << std::endl;
 		return EXIT_SUCCESS;
 	}
 
 	UDPClient client;
-	std::string msg = "hello from client";
+	std::string msg(argv[2]);
 	std::string out_msg;
 	client.connectToServer(argv[1], 1203);
 	client.sendToServer(msg);
