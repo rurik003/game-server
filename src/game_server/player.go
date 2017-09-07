@@ -13,9 +13,16 @@ type GamePlayer struct {
 	properties map[string]string
 }
 
-func (p *GamePlayer) init(n uint, a *net.UDPAddr) {
+func makePlayer(n uint, a *net.UDPAddr, r *GameRoom) *GamePlayer {
+	var retPlayer GamePlayer
+	retPlayer.init(n, a, r)
+	return &retPlayer
+}
+
+func (p *GamePlayer) init(n uint, a *net.UDPAddr, r *GameRoom) {
 	p.number = n
 	p.addr = a
+	p.room = r
 	p.properties = make(map[string]string)
 }
 
