@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"time"
 )
 
 type GameServer struct {
 	conn      *net.UDPConn
-	rooms     []*GameRoom
-	playerMap map[*net.UDPAddr]*GamePlayer
+	playerMap map[string]*GamePlayer
+	mapMtx    sync.Mutex
+	manager   RoomManager
 }
 
 type Message struct {
@@ -25,14 +27,19 @@ func (s *GameServer) init(portString string) {
 	s.conn, err = net.ListenUDP("udp", udpAddr)
 	checkError(err)
 
-	s.rooms = make([]*GameRoom, 8)
-	s.playerMap = make(map[*net.UDPAddr]*GamePlayer)
+	s.mapMtx = sync.Mutex{}
+	s.playerMap = make(map[string]*GamePlayer)
+	s.manager.init()
 }
 
 func (s *GameServer) handleRequests() {
 	c := make(chan Message)
 
 	go s.dispatch(c)
+	go s.manager.manageRooms(s)
+	firstRoom := s.manager.queue.peek()
+	go s.runRoom(firstRoom)
+
 	s.handleClient(c)
 }
 
@@ -74,20 +81,6 @@ func (s *GameServer) dispatchMessage(m Message) {
 	}
 }
 
-func (s *GameServer) notifyPlayers(m Message) {
-	fmt.Println("I'm supposed to be notifying the players")
-
-	var sendBuf bytes.Buffer
-
-	curTime := time.Now().String()
-	sendBuf.WriteString(curTime)
-	sendBuf.WriteString(" You just notified all players! (hopefully)")
-	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
-
-	room := s.playerMap[m.addr].room
-	room.chnl <- m
-}
-
 func (s *GameServer) createRoomAndPlayer(m Message) {
 	fmt.Println("I'm supposed to create a room")
 
@@ -98,11 +91,24 @@ func (s *GameServer) createRoomAndPlayer(m Message) {
 	sendBuf.WriteString(" You just connected!")
 	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
 
-	newRoom := makeRoom(8)
-	newPlayer := makePlayer(0, m.addr, newRoom)
-	s.playerMap[m.addr] = newPlayer
-	newRoom.addPlayer(newPlayer)
-	go s.manageRoom(newRoom)
+	s.manager.dispChnl <- m
+}
+
+func (s *GameServer) notifyPlayers(m Message) {
+	/*	fmt.Println("I'm supposed to be notifying the players")
+
+		var sendBuf bytes.Buffer
+
+		curTime := time.Now().String()
+		sendBuf.WriteString(curTime)
+		sendBuf.WriteString(" You just notified all players! (hopefully)")
+		s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
+		fmt.Println("address is ", m.addr)*/
+
+	s.mapMtx.Lock()
+	room := s.playerMap[m.addr.IP.String()].room
+	s.mapMtx.Unlock()
+	room.msgChnl <- m
 }
 
 func (s *GameServer) unknownMessage(m Message) {
@@ -116,24 +122,26 @@ func (s *GameServer) unknownMessage(m Message) {
 	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
 }
 
-func (s *GameServer) manageRoom(r *GameRoom) {
+func (s *GameServer) runRoom(r *GameRoom) {
 	for {
-		msg, ok := <-r.chnl
-		if !ok {
-			return
+		select {
+		case msg := <-r.msgChnl:
+			s.broadcast(msg.txt, r)
+		case plyr := <-r.plyrChnl:
+			fmt.Println("Received player with address ", plyr.addr)
+			r.addPlayer(plyr)
 		}
-		s.broadcast(msg.txt, r)
 	}
 }
 
-func (s *GameServer) sendMessage(b []byte, other *GamePlayer) {
-	s.conn.WriteToUDP(b, other.addr)
+func (s *GameServer) sendMessage(b []byte, plyr *GamePlayer) {
+	s.conn.WriteToUDP(b, plyr.addr)
 }
 
 func (s *GameServer) broadcast(b []byte, r *GameRoom) {
-	players := r.getPlayers()
-	for i := range players {
-		s.sendMessage(b, players[i])
+	fmt.Println("broadcast called")
+	for i := range r.players {
+		s.sendMessage(b, r.players[i])
 	}
 }
 
