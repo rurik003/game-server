@@ -11,7 +11,7 @@ import (
 
 type GameServer struct {
 	conn      *net.UDPConn
-	playerMap map[string]*GamePlayer
+	playerMap map[*net.UDPAddr]*GamePlayer
 	mapMtx    sync.Mutex
 	manager   RoomManager
 }
@@ -28,7 +28,7 @@ func (s *GameServer) init(portString string) {
 	checkError(err)
 
 	s.mapMtx = sync.Mutex{}
-	s.playerMap = make(map[string]*GamePlayer)
+	s.playerMap = make(map[*net.UDPAddr]*GamePlayer)
 	s.manager.init()
 }
 
@@ -95,18 +95,9 @@ func (s *GameServer) createRoomAndPlayer(m Message) {
 }
 
 func (s *GameServer) notifyPlayers(m Message) {
-	/*	fmt.Println("I'm supposed to be notifying the players")
-
-		var sendBuf bytes.Buffer
-
-		curTime := time.Now().String()
-		sendBuf.WriteString(curTime)
-		sendBuf.WriteString(" You just notified all players! (hopefully)")
-		s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
-		fmt.Println("address is ", m.addr)*/
 
 	s.mapMtx.Lock()
-	room := s.playerMap[m.addr.IP.String()].room
+	room := s.playerMap[m.addr].room
 	s.mapMtx.Unlock()
 	room.msgChnl <- m
 }

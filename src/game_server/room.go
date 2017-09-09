@@ -45,14 +45,14 @@ func (r *RoomManager) manageRooms(s *GameServer) {
 				room.plyrChnl <- plr
 
 				s.mapMtx.Lock()
-				s.playerMap[plr.addr.IP.String()] = plr
+				s.playerMap[plr.addr] = plr
 				s.mapMtx.Unlock()
 				heap.Fix(&r.queue, 0)
 			} else {
 				r.createRoom(s, m)
 			}
 		case p := <-r.roomChnl:
-			key := p.addr.IP.String()
+			key := p.addr
 			s.mapMtx.Lock()
 			_, ok := s.playerMap[key]
 			if ok {
@@ -73,7 +73,7 @@ func (r *RoomManager) createRoom(s *GameServer, m Message) {
 	go s.runRoom(newRoom)
 
 	s.mapMtx.Lock()
-	s.playerMap[newPlayer.addr.IP.String()] = newPlayer
+	s.playerMap[newPlayer.addr] = newPlayer
 	s.mapMtx.Unlock()
 }
 
