@@ -1,6 +1,9 @@
 #include <iostream>
 #include <string>
 #include <cstring>
+
+#include <unistd.h>
+#include <fcntl.h>
 #include <arpa/inet.h>
 
 #include "udp_client.h"
@@ -17,6 +20,10 @@ int UDPClient::connectToServer(const char* addr, const int port)
 	servaddr.sin_addr.s_addr = inet_addr(addr);
 	addr_size = sizeof(servaddr);
 	client_sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (fcntl(client_sock, F_SETFL, O_NONBLOCK) < 0) {
+		return -1;
+	}
+
 	return client_sock;
 }
 
@@ -41,7 +48,13 @@ ssize_t UDPClient::sendToServer(const std::string& s)
 
 ssize_t UDPClient::receiveFromServer(std::string& out)
 {
-	ssize_t ret = recvfrom(client_sock, recv_buffer, BUF_SIZE, 0, NULL, NULL);
+	ssize_t ret;
+	if((ret = recvfrom(client_sock, recv_buffer, BUF_SIZE, 0, NULL, NULL)) < 0) {
+		if (errno == EWOULDBLOCK)
+			return -1;
+		else
+			return 0;
+	}
 	out = std::string(recv_buffer, ret);
 	return ret;
 }

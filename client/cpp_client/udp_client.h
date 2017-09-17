@@ -21,10 +21,6 @@ class UDPClient
 		int connectToServer(const char*, const int);
 		ssize_t sendToServer(const std::string&);	
 		ssize_t receiveFromServer(std::string&);
-		int createRoom();
-		int joinRandomRoom();
-		int leaveRoom();
-		int disconnect();
 		int onError();
 		int updateServer();
 };

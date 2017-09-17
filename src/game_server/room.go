@@ -44,7 +44,7 @@ func (r *RoomManager) createRoom(s *GameServer, m Message) {
 	heap.Push(&r.queue, newRoom)
 	go s.runRoom(newRoom)
 
-	s.playerMap[newPlayer.addr] = newPlayer
+	s.playerMap[newPlayer.addr.String()] = newPlayer
 }
 
 func makeRoom(numPlayers uint) *GameRoom {

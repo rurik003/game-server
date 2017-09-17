@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"sync"
 	"time"
 )
 
 type GameServer struct {
 	conn      *net.UDPConn
-	playerMap map[*net.UDPAddr]*GamePlayer
-	mapMtx    sync.Mutex
+	playerMap map[string]*GamePlayer
 	manager   RoomManager
 }
 
@@ -28,8 +26,7 @@ func (s *GameServer) init(portString string) {
 	s.conn, err = net.ListenUDP("udp", udpAddr)
 	checkError(err)
 
-	s.mapMtx = sync.Mutex{}
-	s.playerMap = make(map[*net.UDPAddr]*GamePlayer)
+	s.playerMap = make(map[string]*GamePlayer)
 	s.manager.init()
 }
 
@@ -67,27 +64,17 @@ func (s *GameServer) dispatch(c chan Message) {
 			fmt.Println("Received: ", recv_str)
 			s.dispatchMessage(data)
 		case p := <-s.manager.roomChnl:
-			key := p.addr
+			key := p.addr.String()
 			_, ok := s.playerMap[key]
 			if ok {
 				delete(s.playerMap, key)
 			}
 		}
-
-		data, ok := <-c
-
-		if !ok {
-			return
-		}
-
-		recv_str := string(data.txt[:])
-		fmt.Println("Received: ", recv_str)
-		s.dispatchMessage(data)
 	}
 }
 
 func (s *GameServer) dispatchMessage(m Message) {
-	key := m.addr
+	key := m.addr.String()
 	_, ok := s.playerMap[key]
 	if ok {
 		s.notifyPlayers(m)
@@ -99,7 +86,9 @@ func (s *GameServer) dispatchMessage(m Message) {
 			plr := makePlayer(room.priority, m.addr, room)
 			room.plyrChnl <- plr
 
-			s.playerMap[plr.addr] = plr
+			s.playerMap[plr.addr.String()] = plr
+			fmt.Println("player address is ", plr.addr)
+
 			room.priority++
 			heap.Fix(&s.manager.queue, 0)
 		} else {
@@ -112,7 +101,7 @@ func (s *GameServer) dispatchMessage(m Message) {
 
 func (s *GameServer) notifyPlayers(m Message) {
 
-	room := s.playerMap[m.addr].room
+	room := s.playerMap[m.addr.String()].room
 	room.msgChnl <- m
 }
 
