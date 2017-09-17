@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <cstring>
 #include <arpa/inet.h>
 
 #include "udp_client.h"
@@ -41,6 +42,6 @@ ssize_t UDPClient::sendToServer(const std::string& s)
 ssize_t UDPClient::receiveFromServer(std::string& out)
 {
 	ssize_t ret = recvfrom(client_sock, recv_buffer, BUF_SIZE, 0, NULL, NULL);
-	out = std::string(recv_buffer);
+	out = std::string(recv_buffer, ret);
 	return ret;
 }

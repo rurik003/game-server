@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"container/heap"
 	"fmt"
 	"net"
 	"os"
@@ -36,7 +37,6 @@ func (s *GameServer) handleRequests() {
 	c := make(chan Message)
 
 	go s.dispatch(c)
-	go s.manager.manageRooms(s)
 	firstRoom := s.manager.queue.peek()
 	go s.runRoom(firstRoom)
 
@@ -58,6 +58,22 @@ func (s *GameServer) handleClient(c chan Message) {
 
 func (s *GameServer) dispatch(c chan Message) {
 	for {
+		select {
+		case data, ok := <-c:
+			if !ok {
+				break
+			}
+			recv_str := string(data.txt[:])
+			fmt.Println("Received: ", recv_str)
+			s.dispatchMessage(data)
+		case p := <-s.manager.roomChnl:
+			key := p.addr
+			_, ok := s.playerMap[key]
+			if ok {
+				delete(s.playerMap, key)
+			}
+		}
+
 		data, ok := <-c
 
 		if !ok {
@@ -71,46 +87,37 @@ func (s *GameServer) dispatch(c chan Message) {
 }
 
 func (s *GameServer) dispatchMessage(m Message) {
-	switch m.txt[0] {
-	case 'n':
+	key := m.addr
+	_, ok := s.playerMap[key]
+	if ok {
 		s.notifyPlayers(m)
-	case 'c':
-		s.createRoomAndPlayer(m)
-	default:
-		s.unknownMessage(m)
+	} else {
+		room := s.manager.queue.peek()
+		if room.priority < RoomSize {
+			fmt.Println("room check successful ", room.priority)
+			s.sendMessageFromServer("room check successful", m)
+			plr := makePlayer(room.priority, m.addr, room)
+			room.plyrChnl <- plr
+
+			s.playerMap[plr.addr] = plr
+			room.priority++
+			heap.Fix(&s.manager.queue, 0)
+		} else {
+			s.sendMessageFromServer("creating a new room", m)
+			s.manager.createRoom(s, m)
+		}
 	}
-}
 
-func (s *GameServer) createRoomAndPlayer(m Message) {
-	fmt.Println("I'm supposed to create a room")
-
-	var sendBuf bytes.Buffer
-
-	curTime := time.Now().String()
-	sendBuf.WriteString(curTime)
-	sendBuf.WriteString(" You just connected!")
-	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
-
-	s.manager.dispChnl <- m
 }
 
 func (s *GameServer) notifyPlayers(m Message) {
 
-	s.mapMtx.Lock()
 	room := s.playerMap[m.addr].room
-	s.mapMtx.Unlock()
 	room.msgChnl <- m
 }
 
 func (s *GameServer) unknownMessage(m Message) {
-	fmt.Println("Received Unknown Message: ", m.txt[0])
-
-	var sendBuf bytes.Buffer
-
-	curTime := time.Now().String()
-	sendBuf.WriteString(curTime)
-	sendBuf.WriteString(" wtf did you just do?")
-	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
+	s.sendMessageFromServer("wtf did you send?", m)
 }
 
 func (s *GameServer) runRoom(r *GameRoom) {
@@ -123,6 +130,18 @@ func (s *GameServer) runRoom(r *GameRoom) {
 			r.addPlayer(plyr)
 		}
 	}
+}
+
+func (s *GameServer) sendMessageFromServer(str string, m Message) {
+	fmt.Println("writing message to player: ", str)
+
+	var sendBuf bytes.Buffer
+
+	curTime := time.Now().String()
+	sendBuf.WriteString(curTime)
+	sendBuf.WriteString(" ")
+	sendBuf.WriteString(str)
+	s.conn.WriteToUDP(sendBuf.Bytes(), m.addr)
 }
 
 func (s *GameServer) sendMessage(b []byte, plyr *GamePlayer) {

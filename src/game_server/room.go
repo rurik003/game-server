@@ -2,11 +2,10 @@ package main
 
 import (
 	"container/heap"
-	"fmt"
 )
 
 const RoomSize = 8
-const NumRooms = 1
+const NumRooms = 8
 
 type GameRoom struct {
 	priority   uint
@@ -28,39 +27,12 @@ type RoomManager struct {
 func (r *RoomManager) init() {
 	r.dispChnl = make(chan Message)
 	r.roomChnl = make(chan *GamePlayer)
-	r.queue = make(RoomQueue, NumRooms)
+
+	//start with 1 room in priority queue
+	r.queue = make(RoomQueue, 1, NumRooms)
 	newRoom := makeRoom(RoomSize)
 	r.queue[0] = newRoom
 	heap.Init(&r.queue)
-}
-
-func (r *RoomManager) manageRooms(s *GameServer) {
-	for {
-		select {
-		case m := <-r.dispChnl:
-			room := r.queue.peek()
-			if room.priority < RoomSize {
-				fmt.Println("room check successful ", room.priority)
-				plr := makePlayer(room.priority, m.addr, room)
-				room.plyrChnl <- plr
-
-				s.mapMtx.Lock()
-				s.playerMap[plr.addr] = plr
-				s.mapMtx.Unlock()
-				heap.Fix(&r.queue, 0)
-			} else {
-				r.createRoom(s, m)
-			}
-		case p := <-r.roomChnl:
-			key := p.addr
-			s.mapMtx.Lock()
-			_, ok := s.playerMap[key]
-			if ok {
-				delete(s.playerMap, key)
-			}
-			s.mapMtx.Unlock()
-		}
-	}
 }
 
 func (r *RoomManager) createRoom(s *GameServer, m Message) {
@@ -68,13 +40,11 @@ func (r *RoomManager) createRoom(s *GameServer, m Message) {
 	newPlayer := makePlayer(0, m.addr, newRoom)
 
 	newRoom.addPlayer(newPlayer)
-
+	newRoom.priority++
 	heap.Push(&r.queue, newRoom)
 	go s.runRoom(newRoom)
 
-	s.mapMtx.Lock()
 	s.playerMap[newPlayer.addr] = newPlayer
-	s.mapMtx.Unlock()
 }
 
 func makeRoom(numPlayers uint) *GameRoom {
